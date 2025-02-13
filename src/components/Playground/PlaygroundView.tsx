@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 // src/components/Playground/PlaygroundView.tsx
 import {
   Award,
