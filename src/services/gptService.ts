@@ -1,10 +1,10 @@
 import { Question, UserContext, ExploreResponse } from '../types';
 import OpenAI from 'openai';
-  
-  export class GPTService {
+
+export class GPTService {
   private openai: OpenAI;
-  
-    constructor() {
+
+  constructor() {
     this.openai = new OpenAI({
       apiKey: import.meta.env.VITE_OPENAI_API_KEY,
       dangerouslyAllowBrowser: true
@@ -16,25 +16,38 @@ import OpenAI from 'openai';
       const response = await this.openai.chat.completions.create({
         model: 'gpt-3.5-turbo',
         messages: [
-          { 
-            role: 'system', 
-            content: `${systemPrompt} Provide your response in JSON format.` 
+          {
+            role: 'system',
+            content: `${systemPrompt} Provide your response in JSON format.`
           },
-          { 
-            role: 'user', 
-            content: userPrompt 
+          {
+            role: 'user',
+            content: userPrompt
           }
-            ],
-            temperature: 0.7,
+        ],
+        temperature: 0.7,
         max_tokens: maxTokens,
-            response_format: { type: "json_object" }
+        response_format: { type: "json_object" }
       });
 
       return response.choices[0].message?.content || '';
-      } catch (error) {
+    } catch (error) {
       console.error('OpenAI API Error:', error);
       throw new Error('Failed to generate content');
     }
+  }
+
+  private async retryWithDelay<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        console.error(`Attempt ${attempt} failed:`, error);
+        if (attempt === retries) throw new Error("API request failed after multiple attempts");
+        await new Promise(resolve => setTimeout(resolve, delay)); // Wait before retrying
+      }
+    }
+    throw new Error("Unexpected error in retry logic");
   }
 
   async getExploreContent(query: string, userContext: UserContext): Promise<ExploreResponse> {
@@ -148,23 +161,15 @@ import OpenAI from 'openai';
         3. Real-world application examples without using the word real world application
         Make it engaging for someone aged ${userContext.age}.`;
 
-        const content = await this.makeRequest(systemPrompt, userPrompt);
+      const content = await this.makeRequest(systemPrompt, userPrompt);
       console.log('Raw GPT response:', content);
-      
+
       if (!content) {
         throw new Error('Empty response from GPT');
       }
 
-        const parsedContent = JSON.parse(content);
-      console.log('Parsed content:', parsedContent);
-
-      // Validate the response structure
-      if (!parsedContent.domain || !parsedContent.content || 
-          !parsedContent.content.paragraph1 || 
-          !parsedContent.content.paragraph2 || 
-          !parsedContent.content.paragraph3) {
-        throw new Error('Invalid response structure');
-      }
+      const requiredKeys = ["domain", "content", "relatedTopics", "relatedQuestions"];
+      const parsedContent = this.parseAndValidateJSON<ExploreResponse>(content, requiredKeys);
 
       // Combine paragraphs into content
       const formattedContent = [
@@ -174,8 +179,8 @@ import OpenAI from 'openai';
       ].join('\n\n');
 
       // Ensure related topics and questions exist
-      const relatedTopics = Array.isArray(parsedContent.relatedTopics) 
-        ? parsedContent.relatedTopics.slice(0, 5) 
+      const relatedTopics = Array.isArray(parsedContent.relatedTopics)
+        ? parsedContent.relatedTopics.slice(0, 5)
         : [];
 
       const relatedQuestions = Array.isArray(parsedContent.relatedQuestions)
@@ -200,19 +205,19 @@ import OpenAI from 'openai';
       if (!question.text?.trim()) return false;
       if (!Array.isArray(question.options) || question.options.length !== 4) return false;
       if (question.options.some(opt => !opt?.trim())) return false;
-      if (typeof question.correctAnswer !== 'number' || 
-          question.correctAnswer < 0 || 
-          question.correctAnswer > 3) return false;
+      if (typeof question.correctAnswer !== 'number' ||
+        question.correctAnswer < 0 ||
+        question.correctAnswer > 3) return false;
 
       // Explanation validation
-      if (!question.explanation?.correct?.trim() || 
-          !question.explanation?.key_point?.trim()) return false;
+      if (!question.explanation?.correct?.trim() ||
+        !question.explanation?.key_point?.trim()) return false;
 
       // Additional validation
       if (question.text.length < 10) return false;  // Too short
       if (question.options.length !== new Set(question.options).size) return false; // Duplicates
-      if (question.explanation.correct.length < 5 || 
-          question.explanation.key_point.length < 5) return false; // Too short explanations
+      if (question.explanation.correct.length < 5 ||
+        question.explanation.key_point.length < 5) return false; // Too short explanations
 
       return true;
     } catch (error) {
@@ -233,7 +238,7 @@ import OpenAI from 'openai';
 
       // Randomly select an aspect to focus on
       const selectedAspect = aspects[Math.floor(Math.random() * aspects.length)];
-      
+
       const systemPrompt = `Generate a UNIQUE multiple-choice question about ${topic}.
         Focus on: ${selectedAspect.replace('_', ' ')}
 
@@ -304,18 +309,13 @@ import OpenAI from 'openai';
         Use current examples and trends.`;
 
       const content = await this.makeRequest(systemPrompt, userPrompt, 1500);
-      
+
       if (!content) {
         throw new Error('Empty response received');
       }
 
-      let parsedContent: Question;
-      try {
-        parsedContent = JSON.parse(content);
-      } catch (error) {
-        console.error('JSON Parse Error:', error);
-        throw new Error('Invalid JSON response');
-      }
+      const requiredKeys = ["text", "options", "correctAnswer", "explanation"];
+      const parsedContent = this.parseAndValidateJSON<Question>(content, requiredKeys);
 
       // Randomly shuffle the options and adjust correctAnswer accordingly
       const shuffled = this.shuffleOptionsAndAnswer(parsedContent);
@@ -348,29 +348,43 @@ import OpenAI from 'openai';
   }
 
   private shuffleOptionsAndAnswer(question: Question): Question {
-    // Create array of option objects with original index
-    const optionsWithIndex = question.options.map((opt, idx) => ({
-      text: opt,
-      isCorrect: idx === question.correctAnswer
-    }));
+    const options = [...question.options];
+    let correctIndex = question.correctAnswer;
 
-    // Shuffle the options
-    for (let i = optionsWithIndex.length - 1; i > 0; i--) {
+    // Fisher-Yates shuffle
+    for (let i = options.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      [optionsWithIndex[i], optionsWithIndex[j]] = [optionsWithIndex[j], optionsWithIndex[i]];
+
+      // Swap options
+      [options[i], options[j]] = [options[j], options[i]];
+
+      // Adjust correct answer index if it was swapped
+      if (i === correctIndex) correctIndex = j;
+      else if (j === correctIndex) correctIndex = i;
     }
 
-    // Find new index of correct answer
-    const newCorrectAnswer = optionsWithIndex.findIndex(opt => opt.isCorrect);
+    return { ...question, options, correctAnswer: correctIndex };
+  }
 
-    return {
-      ...question,
-      options: optionsWithIndex.map(opt => opt.text),
-      correctAnswer: newCorrectAnswer
-    };
+  private parseAndValidateJSON<T>(jsonString: string, requiredKeys: string[]): T {
+    try {
+      const parsed = JSON.parse(jsonString);
+
+      // Ensure all required keys exist in the parsed object
+      for (const key of requiredKeys) {
+        if (!(key in parsed)) {
+          throw new Error(`Missing required key: ${key}`);
+        }
+      }
+
+      return parsed;
+    } catch (error) {
+      console.error("JSON Parsing or Validation Error:", error);
+      throw new Error("Invalid JSON response from AI");
     }
-  
-    async getTestQuestions(topic: string, examType: 'JEE' | 'NEET'): Promise<Question[]> {
+  }
+
+  async getTestQuestions(topic: string, examType: 'JEE' | 'NEET'): Promise<Question[]> {
     try {
       const systemPrompt = `Create a ${examType} exam test set about ${topic}.
         Generate exactly 15 questions following this structure:
@@ -389,11 +403,11 @@ import OpenAI from 'openai';
             }
           ]
         }`;
-        // ..
-        
+      // ..
+
 
       console.log('Generating test questions...');
-      
+
       const content = await this.makeRequest(
         systemPrompt,
         `Create 15 ${examType} questions about ${topic} (5 easy, 5 medium, 5 hard)`,
@@ -407,20 +421,8 @@ import OpenAI from 'openai';
         throw new Error('No content received from API');
       }
 
-      let parsed;
-      try {
-        parsed = JSON.parse(content);
-        console.log('Successfully parsed JSON response');
-      } catch (error) {
-        console.error('JSON parse error:', error);
-        console.log('Raw content:', content);
-        throw new Error('Failed to parse API response');
-      }
-
-      if (!parsed?.questions || !Array.isArray(parsed.questions)) {
-        console.error('Invalid response structure:', parsed);
-        throw new Error('Invalid response structure');
-      }
+      const requiredKeys = ["questions"];
+      const parsed = this.parseAndValidateJSON<{ questions: Question[] }>(content, requiredKeys);
 
       console.log(`Received ${parsed.questions.length} questions`);
 
@@ -555,7 +557,7 @@ import OpenAI from 'openai';
   }
 
   async streamExploreContent(
-    query: string, 
+    query: string,
     userContext: UserContext,
     onChunk: (content: { text?: string, topics?: any[], questions?: any[] }) => void
   ): Promise<void> {
@@ -617,25 +619,24 @@ import OpenAI from 'openai';
           
           Follow the format and length limits strictly.`;
 
-        const stream = await this.openai.chat.completions.create({
-          model: 'gpt-3.5-turbo',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          stream: true,
-          temperature: 0.7
-        });
+        const stream = await this.retryWithDelay(() =>
+          this.openai.chat.completions.create({
+            model: "gpt-3.5-turbo",
+            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+            stream: true,
+            temperature: 0.7
+          })
+        );
 
         let mainContent = '';
         let jsonContent = '';
         let currentTopics: any[] = [];
         let currentQuestions: any[] = [];
         let isJsonSection = false;
-        
+
         for await (const chunk of stream) {
           const content = chunk.choices[0]?.delta?.content || '';
-          
+
           if (content.includes('---')) {
             isJsonSection = true;
             continue;
@@ -649,7 +650,7 @@ import OpenAI from 'openai';
                 const jsonStr = jsonContent.trim();
                 if (jsonStr.startsWith('{') && jsonStr.endsWith('}')) {
                   const parsed = JSON.parse(jsonStr);
-                  
+
                   // Process topics if available
                   if (parsed.topics && Array.isArray(parsed.topics)) {
                     parsed.topics.forEach((topic: any) => {
@@ -690,7 +691,7 @@ import OpenAI from 'openai';
             }
           } else {
             mainContent += content;
-            onChunk({ 
+            onChunk({
               text: mainContent.trim(),
               topics: currentTopics.length > 0 ? currentTopics : undefined,
               questions: currentQuestions.length > 0 ? currentQuestions : undefined
@@ -713,7 +714,7 @@ import OpenAI from 'openai';
         await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
       }
     }
-    }
   }
-  
-  export const gptService = new GPTService();
+}
+
+export const gptService = new GPTService();
