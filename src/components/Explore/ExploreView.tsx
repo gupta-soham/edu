@@ -256,22 +256,28 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
   }, [messages, isUserScrolling]);
 
   // Reset function
-  useEffect(() => {
-    const handleReset = () => {
-      setMessages([]);
-      setShowInitialSearch(true);
-      sessionStorage.removeItem("explore-chat-history");
-    };
+  const handleReset = useCallback(() => {
+    setMessages([]);
+    setShowInitialSearch(true);
+    sessionStorage.removeItem("explore-chat-history");
+  }, []);
 
+  useEffect(() => {
     window.addEventListener("resetExplore", handleReset);
     return () => window.removeEventListener("resetExplore", handleReset);
-  }, []);
+  }, [handleReset]);
 
   const handleSearch = useCallback(
     async (query: string) => {
       try {
         setIsLoading(true);
         setIsUserScrolling(false);
+
+        // Get chat history for context (last 10 messages)
+        const chatHistory = messages.slice(-10).map((msg) => ({
+          type: msg.type,
+          content: msg.content || "",
+        }));
 
         // Add new messages to the existing history
         setMessages((prev) => [
@@ -296,7 +302,8 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
               };
               return newMessages;
             });
-          }
+          },
+          chatHistory
         );
       } catch (error) {
         console.error("Search error:", error);
@@ -307,7 +314,7 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         setIsLoading(false);
       }
     },
-    [gptService, onError, userContext]
+    [gptService, onError, userContext, messages]
   );
 
   const handleRelatedQueryClick = useCallback(
@@ -374,6 +381,15 @@ export const ExploreView: React.FC<ExploreViewProps> = ({
         </div>
       ) : (
         <div className="relative flex flex-col w-full h-[calc(100vh-4rem)]">
+          <div className="flex justify-between items-center px-4 py-2 bg-gray-900/80 border-b border-gray-800">
+            <h2 className="text-sm font-medium text-gray-400">Conversation</h2>
+            <button
+              onClick={handleReset}
+              className="text-sm text-gray-400 hover:text-red-500 transition-colors duration-200"
+            >
+              Clear Chat
+            </button>
+          </div>
           <div
             ref={messagesContainerRef}
             className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700 
