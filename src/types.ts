@@ -15,7 +15,7 @@ export interface Question {
     correct: string;
     key_point: string;
   };
-  difficulty: number;
+  difficulty: "beginner" | "intermediate" | "advanced";
   topic: string;
   subtopic: string;
   questionType: string;

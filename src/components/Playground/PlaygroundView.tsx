@@ -53,6 +53,9 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showExplanation, setShowExplanation] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [difficulty, setDifficulty] = useState<
+    "beginner" | "intermediate" | "advanced"
+  >("beginner");
   const [nextQuestionTimer, setNextQuestionTimer] = useState<ReturnType<
     typeof setTimeout
   > | null>(null);
@@ -119,9 +122,31 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
     }
   };
 
+  const updateDifficulty = (isCorrect: boolean, currentStreak: number) => {
+    setDifficulty((prev) => {
+      // If correct and on a streak, potentially increase difficulty
+      if (isCorrect) {
+        if (currentStreak >= 3 && prev === "beginner") {
+          return "intermediate";
+        } else if (currentStreak >= 5 && prev === "intermediate") {
+          return "advanced";
+        }
+      }
+      // If incorrect, potentially decrease difficulty
+      else {
+        if (prev === "advanced") {
+          return "intermediate";
+        } else if (prev === "intermediate") {
+          return "beginner";
+        }
+      }
+      return prev;
+    });
+  };
+
   const prefetchNextQuestion = async () => {
     try {
-      const question = await getQuestion(query, 1, userContext);
+      const question = await getQuestion(query, difficulty, userContext);
       setNextQuestion(question);
     } catch (error) {
       console.error("Error prefetching next question:", error);
@@ -140,8 +165,8 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
     }
 
     try {
-      console.log("Fetching next question..."); // Debug log
-      const question = await getQuestion(query, 1, userContext);
+      console.log("Fetching next question...", { difficulty }); // Debug log with difficulty
+      const question = await getQuestion(query, difficulty, userContext);
       console.log("Question loaded:", question); // Debug log
       setPreloadedQuestion(question);
     } catch (error) {
@@ -157,9 +182,14 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
       setSelectedAnswer(null);
       setShowExplanation(false);
       setQuery(newQuery);
+      setDifficulty("beginner"); // Reset difficulty for new topic
 
       // Load first question immediately
-      const firstQuestion = await getQuestion(newQuery, 1, userContext);
+      const firstQuestion = await getQuestion(
+        newQuery,
+        "beginner",
+        userContext
+      );
       setCurrentQuestion(firstQuestion);
       setSelectedAnswer(null);
       setCurrentQuestionTime(0); // Reset timer
@@ -257,10 +287,15 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
   const handleAnswer = (index: number) => {
     if (selectedAnswer !== null || !currentQuestion) return;
 
+    const isCorrect = index === currentQuestion.correctAnswer;
     setSelectedAnswer(index);
     setShowExplanation(true);
     stopQuestionTimer();
-    updateStats(index === currentQuestion.correctAnswer);
+
+    // Update stats first so we have the new streak value
+    updateStats(isCorrect);
+    // Then update difficulty based on the new stats
+    updateDifficulty(isCorrect, isCorrect ? stats.streak + 1 : 0);
 
     if (!isPaused) {
       // Start loading next question immediately

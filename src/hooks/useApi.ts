@@ -6,7 +6,7 @@ import { Question, UserContext } from '../types';
 export const useApi = () => {
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleRateLimitError = (error: any) => {
+  const handleRateLimitError = (error: Error | unknown) => {
     if (error instanceof Error && error.name === 'RateLimitError') {
       throw new Error('You have exceeded the request limit. Please try again later.');
     }
@@ -15,12 +15,12 @@ export const useApi = () => {
 
   const getQuestion = async (
     topic: string,
-    level: number,
+    difficulty: "beginner" | "intermediate" | "advanced",
     userContext: UserContext
   ): Promise<Question> => {
     try {
       setIsLoading(true);
-      return await api.getQuestion(topic, level, userContext);
+      return await api.getQuestion(topic, difficulty, userContext);
     } catch (error) {
       const processedError = handleRateLimitError(error);
       const errorMessage =

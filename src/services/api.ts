@@ -47,11 +47,22 @@ const transformQuestion = (rawQuestion: Question): Question => ({
 });
 
 export const api = {
-  async getQuestion(topic: string, level: number, userContext: UserContext): Promise<Question> {
+  async getQuestion(
+    topic: string,
+    difficulty: "beginner" | "intermediate" | "advanced",
+    userContext: UserContext
+  ): Promise<Question> {
     try {
       checkRateLimit();
-      const question = await gptService.getPlaygroundQuestion(topic, level, userContext);
-      return transformQuestion(question);
+      // Convert difficulty string to number for GPT service
+      const difficultyLevel = difficulty === "beginner" ? 1 : difficulty === "intermediate" ? 2 : 3;
+      const question = await gptService.getPlaygroundQuestion(topic, difficultyLevel, userContext);
+      // Convert number back to string for response
+      const formattedQuestion = {
+        ...transformQuestion(question),
+        difficulty: difficulty
+      };
+      return formattedQuestion;
     } catch (error) {
       if (error instanceof RateLimitError) {
         throw error;

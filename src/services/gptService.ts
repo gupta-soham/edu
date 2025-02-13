@@ -288,9 +288,14 @@ export class GPTService {
            - Include real-world context where possible
            - Use age-appropriate language
 
+        5. Difficulty Level (${level}/3):
+           - Level 1 (Beginner): Focus on basic concepts and definitions
+           - Level 2 (Intermediate): Include application and analysis
+           - Level 3 (Advanced): Complex scenarios and deeper understanding
+
         ENSURE HIGH ENTROPY:
         - Randomize question patterns
-        - Vary difficulty within level ${level}
+        - Vary difficulty within level 
         - Mix theoretical and practical aspects
         - Use different companies/technologies as examples
         - Include various ${topic} scenarios
@@ -303,7 +308,7 @@ export class GPTService {
         - No redundant information
         - Maximum 25 words total`;
 
-      const userPrompt = `Create a completely unique ${level}/10 difficulty question about ${topic}.
+      const userPrompt = `Create a completely unique level ${level}/3 difficulty question about ${topic}.
         Focus on ${selectedAspect.replace('_', ' ')}.
         Ensure the correct answer is randomly placed.
         Make it engaging for a ${userContext.age} year old student.
@@ -321,6 +326,13 @@ export class GPTService {
       // Randomly shuffle the options and adjust correctAnswer accordingly
       const shuffled = this.shuffleOptionsAndAnswer(parsedContent);
 
+      // Map numeric difficulty to string
+      const difficultyMap = {
+        1: "beginner",
+        2: "intermediate",
+        3: "advanced"
+      } as const;
+
       // Validate and format the question
       const formattedQuestion: Question = {
         text: shuffled.text || '',
@@ -330,7 +342,7 @@ export class GPTService {
           correct: shuffled.explanation?.correct || 'Correct answer explanation',
           key_point: shuffled.explanation?.key_point || 'Key learning point'
         },
-        difficulty: level,
+        difficulty: difficultyMap[level as keyof typeof difficultyMap] || "beginner",
         topic: topic,
         subtopic: parsedContent.subtopic || topic,
         questionType: 'conceptual',
