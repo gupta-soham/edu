@@ -1,10 +1,17 @@
 // src/hooks/useApi.ts
-import { useState } from "react";
-import { Question, UserContext } from "../types";
-import { api } from "../services/api";
+import { useState } from 'react';
+import { api } from '../services/api';
+import { Question, UserContext } from '../types';
 
 export const useApi = () => {
   const [isLoading, setIsLoading] = useState(false);
+
+  const handleRateLimitError = (error: any) => {
+    if (error instanceof Error && error.name === 'RateLimitError') {
+      throw new Error('You have exceeded the request limit. Please try again later.');
+    }
+    return error;
+  };
 
   const getQuestion = async (
     topic: string,
@@ -15,8 +22,9 @@ export const useApi = () => {
       setIsLoading(true);
       return await api.getQuestion(topic, level, userContext);
     } catch (error) {
+      const processedError = handleRateLimitError(error);
       const errorMessage =
-        error instanceof Error ? error.message : "An error occurred";
+        processedError instanceof Error ? processedError.message : "An error occurred";
       throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -30,9 +38,9 @@ export const useApi = () => {
       const questions = await api.generateTest(topic, examType);
       console.log('API response:', questions);
       return questions;
-    } catch (err) {
-      console.error('Test Generation Error:', err);
-      throw err;
+    } catch (error) {
+      console.error('Test Generation Error:', error);
+      throw handleRateLimitError(error);
     } finally {
       setIsLoading(false);
     }
@@ -42,12 +50,17 @@ export const useApi = () => {
     setIsLoading(true);
     try {
       return await api.explore(query, userContext);
-    } catch (err) {
-      console.error("API Error:", err);
-      throw err;
+    } catch (error) {
+      console.error("API Error:", error);
+      throw handleRateLimitError(error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Add a utility method to get rate limit info if needed
+  const getRateLimitInfo = () => {
+    return api.getRateLimitInfo();
   };
 
   return {
@@ -55,5 +68,6 @@ export const useApi = () => {
     explore,
     getQuestion,
     generateTest,
+    getRateLimitInfo
   };
 };
