@@ -6,7 +6,8 @@ export class GPTService {
 
   constructor() {
     this.openai = new OpenAI({
-      apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+      // apiKey: import.meta.env.VITE_OPENAI_API_KEY,
+      apiKey: localStorage.getItem('openai_api_key')!,
       dangerouslyAllowBrowser: true
     });
   }

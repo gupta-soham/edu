@@ -1,32 +1,46 @@
-import React, { useState } from 'react';
-import { UserContext } from '../../types';
+import React, { useState } from "react";
+import { UserContext } from "../../types";
 
 interface PreFillFormProps {
   onSubmit: (context: UserContext) => void;
 }
 
 export const PreFillForm: React.FC<PreFillFormProps> = ({ onSubmit }) => {
-  const [age, setAge] = useState<string>('');
-  
+  const [age, setAge] = useState<string>("");
+  const [apiKey, setApiKey] = useState<string>("");
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     const ageNumber = parseInt(age);
     if (isNaN(ageNumber) || ageNumber < 1 || ageNumber > 100) {
       return;
     }
 
+    // Validate API key with regex
+    const apiKeyRegex = /^sk-[\w-]+$/;
+    if (!apiKeyRegex.test(apiKey)) {
+      alert("Please provide a valid OpenAI API Key.");
+      return;
+    }
+
+    localStorage.setItem("openai_api_key", apiKey);
+
     onSubmit({
-      age: ageNumber
+      age: ageNumber,
     });
   };
 
   const handleAgeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     // Allow empty string or valid numbers
-    if (value === '' || /^\d{1,3}$/.test(value)) {
+    if (value === "" || /^\d{1,3}$/.test(value)) {
       setAge(value);
     }
+  };
+
+  const handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setApiKey(e.target.value);
   };
 
   return (
@@ -34,12 +48,10 @@ export const PreFillForm: React.FC<PreFillFormProps> = ({ onSubmit }) => {
       <div className="max-w-md w-full space-y-8 bg-gray-800/50 backdrop-blur-sm p-8 rounded-2xl shadow-xl border border-gray-700/50">
         {/* Logo and Title */}
         <div className="text-center">
-          <div className="mx-auto h-16 w-16 mb-4 flex items-center justify-center 
-            bg-primary rounded-xl text-white text-2xl font-bold">
-            {/* Stacked layers logo */}
-            <svg 
-              className="w-10 h-10" 
-              viewBox="0 0 24 24" 
+          <div className="mx-auto h-16 w-16 mb-4 flex items-center justify-center bg-primary rounded-xl text-white text-2xl font-bold">
+            <svg
+              className="w-10 h-10"
+              viewBox="0 0 24 24"
               fill="currentColor"
               xmlns="http://www.w3.org/2000/svg"
             >
@@ -57,9 +69,12 @@ export const PreFillForm: React.FC<PreFillFormProps> = ({ onSubmit }) => {
         </div>
 
         <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-          <div className="rounded-md shadow-sm -space-y-px">
+          <div className="rounded-md shadow-sm space-y-4">
             <div>
-              <label htmlFor="age" className="block text-sm font-medium text-gray-300 mb-2">
+              <label
+                htmlFor="age"
+                className="block text-sm font-medium text-gray-300 mb-2"
+              >
                 Your Age
               </label>
               <div className="relative">
@@ -69,24 +84,51 @@ export const PreFillForm: React.FC<PreFillFormProps> = ({ onSubmit }) => {
                   value={age}
                   onChange={handleAgeChange}
                   placeholder="Enter your age"
-                  className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg
-                    text-white placeholder-gray-400 focus:outline-none focus:ring-2 
-                    focus:ring-primary focus:border-transparent transition-all duration-200"
+                  className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                   required
                 />
               </div>
+            </div>
+            <div>
+              <label
+                htmlFor="apiKey"
+                className="block text-sm font-medium text-gray-300 mb-2"
+              >
+                OpenAI API Key
+              </label>
+              <div className="relative">
+                <input
+                  id="apiKey"
+                  type="password"
+                  value={apiKey}
+                  onChange={handleApiKeyChange}
+                  placeholder="Enter your OpenAI API Key"
+                  className="w-full px-4 py-3 bg-gray-700/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
+                  required
+                />
+              </div>
+              <p className="text-gray-400 text-xs mt-1">
+                You can find or create your API key at{" "}
+                <a
+                  href="https://platform.openai.com/api-keys"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  OpenAI API Keys
+                </a>
+                .
+              </p>
             </div>
           </div>
 
           <div>
             <button
               type="submit"
-              disabled={!age || parseInt(age) < 1 || parseInt(age) > 100}
-              className="group relative w-full flex justify-center py-3 px-4 border 
-                border-transparent text-sm sm:text-base font-medium rounded-lg text-white 
-                bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 
-                focus:ring-offset-2 focus:ring-primary disabled:opacity-50 
-                disabled:cursor-not-allowed transition-all duration-200"
+              disabled={
+                !age || parseInt(age) < 1 || parseInt(age) > 100 || !apiKey
+              }
+              className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm sm:text-base font-medium rounded-lg text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
             >
               Start Exploring
             </button>
@@ -100,4 +142,4 @@ export const PreFillForm: React.FC<PreFillFormProps> = ({ onSubmit }) => {
       </div>
     </div>
   );
-}; 
+};
