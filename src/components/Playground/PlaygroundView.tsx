@@ -190,11 +190,32 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
   };
 
   const togglePause = () => {
-    setIsPaused(!isPaused);
-    if (nextQuestionTimer) {
-      clearTimeout(nextQuestionTimer);
-      setNextQuestionTimer(null);
-    }
+    setIsPaused((prev) => {
+      const newPausedState = !prev;
+
+      if (newPausedState) {
+        // Pausing: Stop timers and clear scheduled transitions
+        if (timerInterval) {
+          clearInterval(timerInterval);
+          setTimerInterval(null);
+        }
+        if (nextQuestionTimer) {
+          clearTimeout(nextQuestionTimer);
+          setNextQuestionTimer(null);
+        }
+      } else {
+        // Resuming: Restart timers if needed
+        if (selectedAnswer === null) {
+          // If question was not answered, resume question timer
+          startQuestionTimer();
+        } else if (nextQuestionCountdown !== null) {
+          // If an answer was selected, restart countdown for next question
+          startCountdown();
+        }
+      }
+
+      return newPausedState;
+    });
   };
 
   const COUNTDOWN_DURATION = 5;
