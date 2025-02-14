@@ -1,38 +1,43 @@
 import { Question, UserContext, ExploreResponse } from '../types';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI, GenerativeModel, Content } from '@google/generative-ai';
 
 export class GPTService {
-  private openai: OpenAI;
+  private model: GenerativeModel;
+  private genAI: GoogleGenerativeAI;
 
   constructor() {
-    this.openai = new OpenAI({
-      apiKey: import.meta.env.VITE_OPENAI_API_KEY,
-      dangerouslyAllowBrowser: true
+    this.genAI = new GoogleGenerativeAI(import.meta.env.VITE_GOOGLE_API_KEY);
+    this.model = this.genAI.getGenerativeModel({
+      model: "gemini-pro",
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 2000,
+      }
     });
   }
 
   private async makeRequest(systemPrompt: string, userPrompt: string, maxTokens: number = 2000) {
     try {
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
-          {
-            role: 'system',
-            content: `${systemPrompt} Provide your response in JSON format.`
-          },
-          {
-            role: 'user',
-            content: userPrompt
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: maxTokens,
-        response_format: { type: "json_object" }
+      const prompt: Content = {
+        role: 'user',
+        parts: [
+          { text: `${systemPrompt} Provide your response in JSON format.` },
+          { text: userPrompt }
+        ]
+      };
+
+      const result = await this.model.generateContent({
+        contents: [prompt],
+        generationConfig: {
+          maxOutputTokens: maxTokens,
+          temperature: 0.7
+        }
       });
 
-      return response.choices[0].message?.content || '';
+      const response = await result.response;
+      return response.text();
     } catch (error) {
-      console.error('OpenAI API Error:', error);
+      console.error('Gemini API Error:', error);
       throw new Error('Failed to generate content');
     }
   }
@@ -162,10 +167,10 @@ export class GPTService {
         Make it engaging for someone aged ${userContext.age}.`;
 
       const content = await this.makeRequest(systemPrompt, userPrompt);
-      console.log('Raw GPT response:', content);
+      console.log('Raw Gemini response:', content);
 
       if (!content) {
-        throw new Error('Empty response from GPT');
+        throw new Error('Empty response from Gemini');
       }
 
       const requiredKeys = ["domain", "content", "relatedTopics", "relatedQuestions"];
@@ -415,8 +420,6 @@ export class GPTService {
             }
           ]
         }`;
-      // ..
-
 
       console.log('Generating test questions...');
 
@@ -439,12 +442,19 @@ export class GPTService {
       console.log(`Received ${parsed.questions.length} questions`);
 
       const processedQuestions = parsed.questions.map((q: Partial<Question>, index: number) => {
-        const difficulty = Math.floor(index / 5) + 1;
+        const difficulty: "beginner" | "intermediate" | "advanced" =
+          index < 5 ? "beginner" :
+            index < 10 ? "intermediate" :
+              "advanced";
+
         return {
           text: q.text || '',
           options: Array.isArray(q.options) ? q.options : [],
           correctAnswer: typeof q.correctAnswer === 'number' ? q.correctAnswer : 0,
-          explanation: q.explanation || '',
+          explanation: q.explanation || {
+            correct: 'Explanation not available',
+            key_point: 'Key point not available'
+          },
           difficulty,
           topic,
           subtopic: q.subtopic || `${topic} Concept ${index + 1}`,
@@ -481,23 +491,28 @@ export class GPTService {
 
   async exploreQuery(query: string): Promise<string> {
     try {
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [
+      const prompt: Content = {
+        role: 'user',
+        parts: [
           {
-            role: 'system' as const,
-            content: 'You are a social media trend expert who explains topics by connecting them to current viral trends, memes, and pop culture moments.'
+            text: 'You are a social media trend expert who explains topics by connecting them to current viral trends, memes, and pop culture moments.'
           },
           {
-            role: 'user' as const,
-            content: this.buildPrompt(query)
+            text: this.buildPrompt(query)
           }
-        ],
-        temperature: 0.9,
-        max_tokens: 4000
+        ]
+      };
+
+      const result = await this.model.generateContent({
+        contents: [prompt],
+        generationConfig: {
+          temperature: 0.9,
+          maxOutputTokens: 4000
+        }
       });
 
-      return response.choices[0].message?.content || '';
+      const response = await result.response;
+      return response.text();
     } catch (error) {
       console.error('Error in exploreQuery:', error);
       return 'bestie, the wifi must be acting up... let me try again';
@@ -571,7 +586,8 @@ export class GPTService {
   async streamExploreContent(
     query: string,
     userContext: UserContext,
-    onChunk: (content: { text?: string, topics?: any[], questions?: any[] }) => void
+    onChunk: (content: { text?: string, topics?: Array<{ topic: string, type: string, reason: string }>, questions?: Array<{ question: string, type: string, context: string }> }) => void,
+    chatHistory?: Array<{ type: string, content: string }>
   ): Promise<void> {
     const maxRetries = 3;
     let retryCount = 0;
@@ -579,6 +595,7 @@ export class GPTService {
     while (retryCount < maxRetries) {
       try {
         const systemPrompt = `You are a Gen-Z tutor who explains complex topics concisely for a ${userContext.age} year old.
+          ${chatHistory && chatHistory.length > 0 ? 'Consider the previous conversation context when providing your response.' : ''}
           First provide the explanation in plain text, then provide related content in a STRICT single-line JSON format.
           
           Structure your response exactly like this:
@@ -620,7 +637,7 @@ export class GPTService {
           - Topic types: prerequisite, extension, application, parallel, deeper
           - Question types: curiosity, mechanism, causality, innovation, insight`;
 
-        const userPrompt = `Explain "${query}" in three very concise paragraphs for a ${userContext.age} year old in genz style:
+        const userPrompt = `${chatHistory && chatHistory.length > 0 ? 'Previous conversation:\n' + chatHistory.map(msg => `${msg.type === 'user' ? 'User' : 'Assistant'}: ${msg.content}`).join('\n') + '\n\nNow, ' : ''}Explain "${query}" in three very concise paragraphs for a ${userContext.age} year old in genz style:
           1. Basic definition (15-20 words)
           2. Key details (15-20 words)
           3. Direct applications and facts (15-20 words)
@@ -631,23 +648,32 @@ export class GPTService {
           
           Follow the format and length limits strictly.`;
 
-        const stream = await this.retryWithDelay(() =>
-          this.openai.chat.completions.create({
-            model: "gpt-3.5-turbo",
-            messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-            stream: true,
-            temperature: 0.7
+        const prompt: Content = {
+          role: 'user',
+          parts: [
+            { text: systemPrompt },
+            { text: userPrompt }
+          ]
+        };
+
+        const result = await this.retryWithDelay(() =>
+          this.model.generateContentStream({
+            contents: [prompt],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 4000
+            }
           })
         );
 
         let mainContent = '';
         let jsonContent = '';
-        let currentTopics: any[] = [];
-        let currentQuestions: any[] = [];
+        const currentTopics: Array<{ topic: string, type: string, reason: string }> = [];
+        const currentQuestions: Array<{ question: string, type: string, context: string }> = [];
         let isJsonSection = false;
 
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || '';
+        for await (const chunk of result.stream) {
+          const content = chunk.text();
 
           if (content.includes('---')) {
             isJsonSection = true;
@@ -665,7 +691,7 @@ export class GPTService {
 
                   // Process topics if available
                   if (parsed.topics && Array.isArray(parsed.topics)) {
-                    parsed.topics.forEach((topic: any) => {
+                    parsed.topics.forEach((topic: { name: string, type: string, detail: string }) => {
                       if (!currentTopics.some(t => t.topic === topic.name)) {
                         currentTopics.push({
                           topic: topic.name,
@@ -678,7 +704,7 @@ export class GPTService {
 
                   // Process questions if available
                   if (parsed.questions && Array.isArray(parsed.questions)) {
-                    parsed.questions.forEach((question: any) => {
+                    parsed.questions.forEach((question: { text: string, type: string, detail: string }) => {
                       if (!currentQuestions.some(q => q.question === question.text)) {
                         currentQuestions.push({
                           question: question.text,

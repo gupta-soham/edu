@@ -9,6 +9,7 @@ import {
   Timer,
   Trophy,
   XCircle,
+  Brain,
 } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { useApi } from "../../hooks/useApi";
@@ -412,7 +413,25 @@ export const PlaygroundView: React.FC<PlaygroundViewProps> = ({
         </div>
       ) : (
         <div className="w-full max-w-3xl mx-auto px-4">
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mt-2">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4 mt-2">
+            <div className="card">
+              <div className="flex items-center gap-2">
+                <Brain
+                  className={`w-5 h-5 ${
+                    difficulty === "beginner"
+                      ? "text-green-500"
+                      : difficulty === "intermediate"
+                      ? "text-yellow-500"
+                      : "text-red-500"
+                  }`}
+                />
+                <span className="text-sm font-medium">Level</span>
+              </div>
+              <div className="mt-1 text-sm font-semibold capitalize">
+                {difficulty}
+              </div>
+            </div>
+
             <div className="card">
               <div className="flex items-center gap-2 text-primary">
                 <Trophy className="w-5 h-5" />
